@@ -37,7 +37,7 @@ dms ipc call inhibit disable
 
 ### 安装步骤
 
-可以安装下面方式自行编译, 或者到[releases](./releases)下载
+可以安装下面方式自行编译, 或者到[releases](https://github.com/ruinb0wman/dms-input-idle-inhibit/releases)下载
 
 ```bash
 # 进入项目目录
