@@ -152,32 +152,14 @@ bun run start -- --gamepad-only --duration 10000
 bun run start -- --verbose
 ```
 
-### 作为 systemd 用户服务运行
+### niri
 
-创建 `~/.config/systemd/user/dms-input-idle-inhibit.service`：
+配置示例
 
-```ini
-[Unit]
-Description=DMS Input Idle Inhibit
-After=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/dms-input-idle-inhibit
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
+```
+spawn-at-startup "dmsii" "-d" "60000"
 ```
 
-启用并启动服务：
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable dms-input-idle-inhibit
-systemctl --user start dms-input-idle-inhibit
-```
 
 ## 设备检测
 
