@@ -1,6 +1,6 @@
 {
   "name": "dms-input-idle-inhibit",
-  "version": "1.1.0",
+  "version": "0.1.0",
   "description": "Prevent DMS/quickshell idle via IPC by monitoring touchpad and gamepad inputs",
   "main": "src/index.ts",
   "bin": {
