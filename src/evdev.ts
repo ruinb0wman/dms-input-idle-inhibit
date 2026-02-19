@@ -6,7 +6,6 @@
  */
 
 import * as fs from "fs";
-import { EventEmitter } from "events";
 
 // Evdev event structure (24 bytes on 64-bit systems)
 // struct input_event {
@@ -260,73 +259,152 @@ export function getEventCodeName(type: number, code: number): string {
   return `${code}`;
 }
 
-export class EvdevDevice extends EventEmitter {
-  private fd: number | null = null;
-  private buffer: Buffer;
-  private devicePath: string;
-  private reading = false;
-  private openFlag = false;
+// ============================================================================
+// 函数式 EvdevDevice 接口
+// ============================================================================
 
-  constructor(devicePath: string) {
-    super();
-    this.devicePath = devicePath;
-    this.buffer = Buffer.alloc(24);
+export interface EvdevDevice {
+  readonly path: string;
+  readonly fd: number | null;
+  readonly isOpen: boolean;
+  readonly isReading: boolean;
+}
+
+export interface EvdevDeviceCallbacks {
+  onEvent?: (event: InputEvent) => void;
+  onError?: (error: Error) => void;
+}
+
+export interface EvdevDeviceState {
+  device: EvdevDevice;
+  callbacks: EvdevDeviceCallbacks;
+  buffer: Buffer;
+}
+
+/**
+ * 创建一个新的 evdev 设备状态（未打开）
+ */
+export function createEvdevDevice(path: string): EvdevDeviceState {
+  return {
+    device: {
+      path,
+      fd: null,
+      isOpen: false,
+      isReading: false,
+    },
+    callbacks: {},
+    buffer: Buffer.alloc(24),
+  };
+}
+
+/**
+ * 设置设备回调函数
+ */
+export function setDeviceCallbacks(
+  state: EvdevDeviceState,
+  callbacks: EvdevDeviceCallbacks
+): EvdevDeviceState {
+  return {
+    ...state,
+    callbacks,
+  };
+}
+
+/**
+ * 打开 evdev 设备
+ */
+export function openDevice(state: EvdevDeviceState): EvdevDeviceState {
+  if (state.device.fd !== null) {
+    return state;
   }
 
-  get path(): string {
-    return this.devicePath;
-  }
+  const fd = fs.openSync(state.device.path, "r");
+  const newState: EvdevDeviceState = {
+    ...state,
+    device: {
+      ...state.device,
+      fd,
+      isOpen: true,
+      isReading: true,
+    },
+  };
 
-  isOpen(): boolean {
-    return this.openFlag && this.fd !== null && this.reading;
-  }
+  // 开始异步读取
+  doRead(newState);
 
-  open(): void {
-    if (this.fd !== null) return;
+  return newState;
+}
 
-    this.fd = fs.openSync(this.devicePath, "r");
-    this.reading = true;
-    this.openFlag = true;
-    this.doRead();
-  }
-
-  close(): void {
-    this.reading = false;
-    this.openFlag = false;
-    if (this.fd !== null) {
-      try {
-        fs.closeSync(this.fd);
-      } catch {
-        // Ignore close errors
-      }
-      this.fd = null;
+/**
+ * 关闭 evdev 设备
+ */
+export function closeDevice(state: EvdevDeviceState): EvdevDeviceState {
+  if (state.device.fd !== null) {
+    try {
+      fs.closeSync(state.device.fd);
+    } catch {
+      // Ignore close errors
     }
   }
 
-  private doRead(): void {
-    if (!this.reading || this.fd === null) return;
+  return {
+    ...state,
+    device: {
+      ...state.device,
+      fd: null,
+      isOpen: false,
+      isReading: false,
+    },
+  };
+}
 
-    fs.read(this.fd, this.buffer, 0, 24, null, (err, bytesRead) => {
-      if (err) {
-        this.openFlag = false;
-        this.emit("error", err);
-        return;
-      }
+/**
+ * 检查设备是否处于打开状态
+ */
+export function isDeviceOpen(state: EvdevDeviceState): boolean {
+  return state.device.isOpen && state.device.fd !== null && state.device.isReading;
+}
 
-      if (bytesRead === 0) {
-        // Device disconnected (EOF)
-        this.openFlag = false;
-        this.emit("error", new Error("Device disconnected (EOF)"));
-        return;
-      }
-
-      if (bytesRead === 24) {
-        const event = parseEvent(this.buffer);
-        this.emit("event", event);
-      }
-
-      // Continue reading
-      this.doRead();
-    });
+/**
+ * 执行异步读取循环
+ */
+function doRead(state: EvdevDeviceState): void {
+  if (!state.device.isReading || state.device.fd === null) {
+    return;
   }
+
+  fs.read(state.device.fd, state.buffer, 0, 24, null, (err, bytesRead) => {
+    if (err) {
+      const newState: EvdevDeviceState = {
+        ...state,
+        device: {
+          ...state.device,
+          isOpen: false,
+        },
+      };
+      state.callbacks.onError?.(err);
+      return;
+    }
+
+    if (bytesRead === 0) {
+      // Device disconnected (EOF)
+      const newState: EvdevDeviceState = {
+        ...state,
+        device: {
+          ...state.device,
+          isOpen: false,
+        },
+      };
+      state.callbacks.onError?.(new Error("Device disconnected (EOF)"));
+      return;
+    }
+
+    if (bytesRead === 24) {
+      const event = parseEvent(state.buffer);
+      state.callbacks.onEvent?.(event);
+    }
+
+    // Continue reading
+    doRead(state);
+  });
 }

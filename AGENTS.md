@@ -17,6 +17,7 @@
 |-----------|------------|
 | Runtime | [Bun](https://bun.sh/) |
 | Language | TypeScript |
+| Programming Style | Functional Programming |
 | Package Manager | Bun (uses `bun.lock`) |
 | Build Tool | Bun's native compiler (`bun build --compile`) |
 | Target Platform | Linux (evdev subsystem) |
@@ -26,43 +27,174 @@
 ```
 .
 ├── src/
-│   ├── index.ts         # Entry point: CLI parsing, InputMonitor orchestration
-│   ├── evdev.ts         # Linux evdev constants, event parsing, EvdevDevice class
+│   ├── index.ts         # Entry point: CLI parsing, device monitoring orchestration
+│   ├── evdev.ts         # Linux evdev constants, event parsing, device functions
 │   ├── device-info.ts   # Device detection via sysfs capability parsing
-│   └── idle-inhibit.ts  # DMS IPC integration, IdleInhibitor class
+│   └── idle-inhibit.ts  # DMS IPC integration, inhibitor functions
 ├── package.json         # Project metadata and npm scripts
 ├── tsconfig.json        # TypeScript configuration (strict mode)
 ├── bun.lock            # Bun lockfile
 └── README.md           # User documentation (Chinese)
 ```
 
-### Module Responsibilities
+## Module Reference
 
-#### `src/index.ts`
-- CLI argument parsing (`parseArgs()`)
-- `InputMonitor` class: orchestrates device monitoring and idle inhibition
-  - Device discovery and filtering
-  - Event routing from devices to inhibitor
-  - Graceful shutdown handling (SIGINT/SIGTERM)
+### `src/evdev.ts` - Linux Input Event Handling
 
-#### `src/evdev.ts`
-- Linux input event constants (EV_SYN, EV_KEY, EV_ABS, BTN_*)
-- Event structure parsing (24-byte `input_event` struct)
-- `EvdevDevice` class: EventEmitter-based async device reader
-  - Opens `/dev/input/event*` files
-  - Emits parsed `InputEvent` objects
+**Constants:**
+- Event types: `EV_SYN`, `EV_KEY`, `EV_REL`, `EV_ABS`, `EV_MSC`, ...
+- Gamepad buttons: `BTN_GAMEPAD`, `BTN_SOUTH`, `BTN_EAST`, ...
+- Touchpad: `BTN_TOUCH`, `BTN_TOOL_FINGER`, `ABS_X`, `ABS_Y`, ...
 
-#### `src/device-info.ts`
-- Device capability parsing from `/sys/class/input/`
-- `isTouchpad()`: Detects touchpads by name patterns and ABS + BTN_TOUCH capabilities
-- `isGamepad()`: Detects gamepads by name patterns and BTN_JOYSTICK/BTN_GAMEPAD capabilities
-- `listInputDevices()`: Enumerates all input devices
+**Types:**
+```typescript
+interface InputEvent {
+  sec: bigint;      // Timestamp seconds
+  usec: bigint;     // Timestamp microseconds
+  type: number;     // Event type (EV_*)
+  code: number;     // Event code
+  value: number;    // Event value
+}
 
-#### `src/idle-inhibit.ts`
-- `IdleInhibitor` class: Manages DMS idle inhibition state
-  - `inhibit()`: Enables inhibition with auto-release timeout
-  - `release()`: Disables inhibition immediately
-  - Checks `dms` command availability on first use
+interface EvdevDeviceState {
+  device: {
+    readonly path: string;
+    readonly fd: number | null;
+    readonly isOpen: boolean;
+    readonly isReading: boolean;
+  };
+  callbacks: EvdevDeviceCallbacks;
+  buffer: Buffer;
+}
+```
+
+**Pure Functions:**
+- `createEvdevDevice(path)` - Create new device state
+- `setDeviceCallbacks(state, callbacks)` - Set event/error callbacks
+- `openDevice(state)` - Open device and start reading (returns new state)
+- `closeDevice(state)` - Close device (returns new state)
+- `isDeviceOpen(state)` - Check if device is open
+- `parseEvent(buffer)` - Parse 24-byte input_event struct
+- `formatEvent(event)` - Format event for display
+- `getEventTypeName(type)` / `getEventCodeName(type, code)` - Get human-readable names
+
+### `src/device-info.ts` - Device Detection
+
+**Types:**
+```typescript
+interface DeviceInfo {
+  path: string;
+  name: string;
+  capabilities: {
+    ev: string;     // Event types bitmask
+    key?: string;   // Key/button capabilities
+    abs?: string;   // Absolute axis capabilities
+    // ... other capability bitmaps
+  };
+}
+```
+
+**Pure Functions:**
+- `listInputDevices()` - List all input devices from `/sys/class/input`
+- `findTouchpads()` - Filter touchpad devices
+- `findGamepads()` - Filter gamepad/joystick devices
+- `isTouchpad(info)` - Check if device is a touchpad
+- `isGamepad(info)` - Check if device is a gamepad
+- `getDeviceName(path)` - Read device name from sysfs
+- `getDeviceCapabilities(path)` - Read capability bitmaps from sysfs
+
+### `src/idle-inhibit.ts` - DMS IPC Control
+
+**Types:**
+```typescript
+interface IdleInhibitorConfig {
+  duration: number;      // Duration to keep inhibited (ms)
+  useToggle?: boolean;   // Use toggle mode (optional)
+}
+
+interface IdleInhibitorState {
+  readonly config: IdleInhibitorConfig;
+  readonly active: boolean;
+  readonly dmsAvailable: boolean | null;
+}
+```
+
+**Pure Functions:**
+- `createInhibitor(config?)` - Create initial inhibitor state
+- `inhibit(state)` - Enable idle inhibition (returns new state with active=true)
+- `release(state)` - Disable idle inhibition (returns new state with active=false)
+- `toggle(state)` - Toggle inhibition state
+- `isInhibitorActive(state)` - Check if inhibition is active
+
+**Note:** These functions are async due to IPC calls. The caller is responsible for:
+1. Checking `state.active` before calling `inhibit()` to avoid duplicates
+2. Managing the auto-release timeout externally
+
+### `src/index.ts` - Main Application
+
+**Types:**
+```typescript
+interface CliOptions {
+  duration: number;
+  touchpadOnly: boolean;
+  gamepadOnly: boolean;
+  listDevices: boolean;
+  verbose: boolean;
+}
+
+interface MonitorState {
+  readonly options: CliOptions;
+  inhibitor: IdleInhibitorState;        // Mutable: updated by async operations
+  readonly devices: Map<string, MonitoredDevice>;
+  releaseTimeoutId: Timer | null;       // Mutable: for canceling timeout
+  // ... other fields
+}
+```
+
+**Key Functions:**
+- `parseArgs()` - Parse CLI arguments
+- `createInitialMonitorState(options)` - Create initial monitor state
+- `getDevicesToMonitor(options)` - Get list of devices to monitor
+- `scanAndConnectDevices(state, onInput, onError)` - Scan and connect new devices
+- `handleInput(state, deviceName, event)` - Handle input event
+- `scheduleRelease(monitorState, duration)` - Schedule auto-release timeout
+- `startMonitor(options)` - Main entry point
+
+## Functional Programming Patterns
+
+### State Management
+- **Immutable State**: State objects are readonly; updates return new objects
+- **Reference Wrapper**: `monitorState: { current: MonitorState }` allows async callbacks to access latest state
+
+```typescript
+// State update pattern
+monitorState.current = {
+  ...monitorState.current,
+  inhibitor: newInhibitor,
+};
+```
+
+### Async State Handling
+```typescript
+// Sync check before async operation to prevent race conditions
+if (monitorState.current.inhibitor.active) {
+  // Already inhibiting, just reschedule
+  scheduleRelease(monitorState, duration);
+} else {
+  // Mark as active synchronously
+  monitorState.current.inhibitor = {
+    ...monitorState.current.inhibitor,
+    active: true,
+  };
+  // Then perform async operation
+  const updated = await inhibit(monitorState.current.inhibitor);
+  monitorState.current.inhibitor = updated;
+}
+```
+
+### Side Effect Isolation
+- **Pure modules** (`evdev.ts`, `device-info.ts`, `idle-inhibit.ts`): No side effects, deterministic
+- **Impure layer** (`index.ts`): Contains all IO, timers, and event handlers
 
 ## Build Commands
 
@@ -99,26 +231,18 @@ Options:
 - **Strict mode enabled**: `strict: true` in tsconfig.json
 - **Target**: ESNext with Bun's module resolution
 - **Unchecked index access**: Enabled (`noUncheckedIndexedAccess: true`)
-- **Unused locals/parameters**: NOT enforced (set to `false`)
 
 ### Naming Conventions
-- Classes: `PascalCase` (e.g., `EvdevDevice`, `IdleInhibitor`)
-- Interfaces: `PascalCase` (e.g., `InputEvent`, `DeviceInfo`)
+- Functions: `camelCase` (e.g., `createEvdevDevice`, `isTouchpad`)
+- Types/Interfaces: `PascalCase` (e.g., `InputEvent`, `IdleInhibitorState`)
 - Constants: `UPPER_SNAKE_CASE` for evdev constants (e.g., `EV_SYN`, `BTN_GAMEPAD`)
-- Functions: `camelCase` (e.g., `parseEvent`, `isTouchpad`)
-- Private methods: `camelCase` with `private` modifier
+- Pure functions should have no side effects
 
 ### Code Patterns
+- Use `readonly` for immutable properties
 - Use `BigInt` for 64-bit capability bitmask operations
-- Event-driven architecture using Node.js `EventEmitter`
-- Async/await for subprocess spawning (DMS IPC)
-- Synchronous file operations for sysfs reads (simple/small files)
-
-### Error Handling
-- Try-catch blocks for filesystem operations
-- Error events emitted from `EvdevDevice` (non-fatal)
-- Console error logging for DMS command failures
-- Graceful degradation when devices cannot be opened
+- State updates use spread operator: `{ ...state, field: newValue }`
+- Async functions return `Promise<State>` for state transitions
 
 ## Testing
 
@@ -134,6 +258,7 @@ Options:
 - [ ] Input events trigger inhibition (check DMS logs)
 - [ ] Timeout release works (inhibition releases after duration)
 - [ ] Graceful shutdown works (Ctrl+C releases inhibition)
+- [ ] No duplicate "Enabling" messages (race condition check)
 
 ## Runtime Requirements
 
@@ -154,14 +279,6 @@ ls -la /dev/input/event*
 # Should show read permissions for user or input group
 ```
 
-## Security Considerations
-
-1. **Input Device Access**: Requires reading from `/dev/input/event*` devices. The compiled binary or Bun process must have appropriate permissions (user in `input` group, or running as root - not recommended).
-
-2. **DMS IPC**: Executes `dms` command via `child_process.spawn()`. No shell interpolation is used, but ensure `dms` binary is the expected one (not a malicious replacement in PATH).
-
-3. **No Network**: Tool does not open network connections; purely local IPC and input device access.
-
 ## Common Issues
 
 | Issue | Cause | Solution |
@@ -170,20 +287,14 @@ ls -la /dev/input/event*
 | "dms command not found" | DMS not installed or not in PATH | Install DMS/quickshell |
 | Permission denied on devices | User not in `input` group | `sudo usermod -aG input $USER` then re-login |
 | Events detected but no inhibition | DMS IPC not working | Verify DMS is running, check DMS logs |
-
-## Development Workflow
-
-1. Make changes to TypeScript source files
-2. Test with `bun run dev -- --verbose --list-devices`
-3. Test actual inhibition with `bun run dev -- --verbose --duration 10000`
-4. Build for distribution: `bun run build`
-5. Test compiled binary: `./dms-input-idle-inhibit --list-devices`
+| Duplicate "Enabling" messages | Race condition in async inhibit | Already fixed in latest code (sync check before async) |
 
 ## Notes for AI Agents
 
-- **Do not assume Jest/Vitest testing** - project has no test framework
-- **Evdev constants** are manually defined from Linux kernel headers - verify against kernel docs if adding new ones
-- **Capability bitmask parsing** uses `BigInt` for 64+ bit masks - maintain this for new capability checks
-- **Sysfs paths** are hardcoded to `/sys/class/input/` - these are kernel ABI and stable
-- **Event structure** (24 bytes) matches `struct input_event` - do not change without kernel reference
-- Comments and documentation are primarily in **Chinese** - maintain this for user-facing docs
+- **No Class-based code**: Project uses pure functions and immutable state
+- **State updates**: Always return new state objects, never mutate
+- **Async race conditions**: When handling events, check state synchronously before async operations
+- **Evdev constants**: Manually defined from Linux kernel headers - verify against kernel docs if adding new ones
+- **Capability bitmask parsing**: Uses `BigInt` for 64+ bit masks
+- **Sysfs paths**: Hardcoded to `/sys/class/input/` - these are kernel ABI and stable
+- **Event structure**: 24 bytes matching `struct input_event` - do not change without kernel reference
