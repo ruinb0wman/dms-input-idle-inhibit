@@ -37,6 +37,8 @@ dms ipc call inhibit disable
 
 ### 安装步骤
 
+可以安装下面方式自行编译, 或者到[releases](./releases)下载
+
 ```bash
 # 进入项目目录
 cd dms-input-idle-inhibit
@@ -47,8 +49,10 @@ bun install
 # 可选：编译为独立可执行文件
 bun run build
 
-# 将编译后的文件移动到 PATH 中
+# 将编译后的文件移动到 PATH 中, 例如
 sudo cp dms-input-idle-inhibit /usr/local/bin/
+# 或
+sudo cp dms-input-idle-inhibit `$HOME/.local/bin/`
 ```
 
 ## 使用方法
@@ -159,8 +163,6 @@ inhibitor = await inhibit(inhibitor);
 // 禁用抑制（异步，返回新状态）
 inhibitor = await release(inhibitor);
 ```
-
-
 
 ## 设备检测
 
