@@ -27,6 +27,76 @@ dms ipc call inhibit disable
 2. 启动定时器，在指定时间后调用 `dms ipc call inhibit disable`
 3. 如果期间有新的输入，重置定时器
 
+## 安装
+
+### 前置要求
+
+- DMS (quickshell) 必须正在运行
+- Linux 系统（需要访问 `/dev/input/event*`）
+- 用户需要在 `input` 组以访问输入设备
+
+### 安装步骤
+
+```bash
+# 进入项目目录
+cd dms-input-idle-inhibit
+
+# 安装依赖
+bun install
+
+# 可选：编译为独立可执行文件
+bun run build
+
+# 将编译后的文件移动到 PATH 中
+sudo cp dms-input-idle-inhibit /usr/local/bin/
+```
+
+## 使用方法
+
+### 基本使用
+
+```bash
+# 直接运行
+bun run start
+
+# 或使用编译后的版本
+dms-input-idle-inhibit
+```
+
+### 命令行选项
+
+```
+Options:
+  --duration, -d <ms>      输入后保持抑制的持续时间（毫秒，默认: 5000）
+  --touchpad-only          只监听触摸板设备
+  --gamepad-only           只监听手柄/摇杆设备
+  --list-devices           列出所有输入设备并退出
+  --verbose, -v            启用详细日志
+  --help, -h               显示帮助
+```
+
+### 示例
+
+```bash
+# 列出所有设备
+bun run start -- --list-devices
+
+# 只监听手柄，抑制10秒
+bun run start -- --gamepad-only --duration 10000
+
+# 启用详细日志（显示所有输入事件）
+bun run start -- --verbose
+```
+
+### niri
+
+配置示例
+
+```
+spawn-at-startup "dms-input-idle-inhibit" "-d" "60000"
+```
+
+
 ## 项目架构
 
 ### 技术栈
@@ -90,75 +160,6 @@ inhibitor = await inhibit(inhibitor);
 inhibitor = await release(inhibitor);
 ```
 
-## 安装
-
-### 前置要求
-
-- [Bun](https://bun.sh/) 运行时
-- DMS (quickshell) 必须正在运行
-- Linux 系统（需要访问 `/dev/input/event*`）
-- 用户需要在 `input` 组以访问输入设备
-
-### 安装步骤
-
-```bash
-# 进入项目目录
-cd dms-input-idle-inhibit
-
-# 安装依赖
-bun install
-
-# 可选：编译为独立可执行文件
-bun run build
-
-# 将编译后的文件移动到 PATH 中
-sudo cp dms-input-idle-inhibit /usr/local/bin/
-```
-
-## 使用方法
-
-### 基本使用
-
-```bash
-# 直接运行
-bun run start
-
-# 或使用编译后的版本
-dms-input-idle-inhibit
-```
-
-### 命令行选项
-
-```
-Options:
-  --duration, -d <ms>      输入后保持抑制的持续时间（毫秒，默认: 5000）
-  --touchpad-only          只监听触摸板设备
-  --gamepad-only           只监听手柄/摇杆设备
-  --list-devices           列出所有输入设备并退出
-  --verbose, -v            启用详细日志
-  --help, -h               显示帮助
-```
-
-### 示例
-
-```bash
-# 列出所有设备
-bun run start -- --list-devices
-
-# 只监听手柄，抑制10秒
-bun run start -- --gamepad-only --duration 10000
-
-# 启用详细日志（显示所有输入事件）
-bun run start -- --verbose
-```
-
-### niri
-
-配置示例
-
-```
-spawn-at-startup "dmsii" "-d" "60000"
-```
 
 
 ## 设备检测
