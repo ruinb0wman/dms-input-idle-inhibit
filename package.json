@@ -1,10 +1,10 @@
 {
-  "name": "dms-input-idle-inhibit",
+  "name": "dmsii",
   "version": "0.1.0",
   "description": "Prevent DMS/quickshell idle via IPC by monitoring touchpad and gamepad inputs",
   "main": "src/index.ts",
   "bin": {
-    "dms-input-idle-inhibit": "./src/index.ts"
+    "dmsii": "./src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",

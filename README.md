@@ -23,6 +23,7 @@ dms ipc call inhibit disable
 ```
 
 当检测到触摸板或手柄输入时，程序会：
+
 1. 调用 `dms ipc call inhibit enable` 阻止熄屏
 2. 启动定时器，在指定时间后调用 `dms ipc call inhibit disable`
 3. 如果期间有新的输入，重置定时器
@@ -99,18 +100,19 @@ bun run start -- --verbose
 配置示例
 
 ```
-spawn-at-startup "dms-input-idle-inhibit" "-d" "60000"
+spawn-at-startup "/PATH/TO/src/index.ts" "-d" "60000"
 ```
-
 
 ## 项目架构
 
 ### 技术栈
+
 - **运行时**: [Bun](https://bun.sh/)
 - **语言**: TypeScript (严格模式)
 - **编程范式**: 函数式编程（纯函数、不可变状态）
 
 ### 目录结构
+
 ```
 src/
 ├── index.ts         # 主程序：CLI 解析、状态管理、事件处理
@@ -122,6 +124,7 @@ src/
 ### 核心模块
 
 #### evdev.ts - 输入事件处理
+
 提供函数式接口操作 evdev 设备：
 
 ```typescript
@@ -139,6 +142,7 @@ const opened = openDevice(withCallbacks);
 ```
 
 #### device-info.ts - 设备检测
+
 从 sysfs 读取设备信息，识别触摸板和手柄：
 
 ```typescript
@@ -153,6 +157,7 @@ const gamepads = devices.filter(isGamepad);
 ```
 
 #### idle-inhibit.ts - DMS IPC 控制
+
 管理 DMS idle inhibition 状态：
 
 ```typescript
@@ -171,7 +176,9 @@ inhibitor = await release(inhibitor);
 程序启动时扫描 `/dev/input/event*` 设备，根据以下条件识别：
 
 ### 触摸板检测
+
 通过以下方式识别：
+
 1. 设备名称包含 "touchpad" 或 "trackpad"
 2. 或设备能力检查：
    - 支持绝对坐标 (`EV_ABS`)
@@ -180,7 +187,9 @@ inhibitor = await release(inhibitor);
    - 排除明显的手柄（名称不含 "joystick"、"gamepad" 等）
 
 ### 手柄/摇杆检测
+
 通过以下方式识别：
+
 1. 设备名称包含 "gamepad"、"joystick"、"controller" 或 "joy"
 2. 或设备能力检查：
    - 有游戏手柄按钮 (`BTN_JOYSTICK` 或 `BTN_GAMEPAD`)
@@ -197,6 +206,7 @@ inhibitor = await release(inhibitor);
 - **显式状态传递**: 状态作为参数传入，新状态作为返回值传出
 
 示例：
+
 ```typescript
 // 不可变状态更新
 const newState = {
@@ -247,6 +257,7 @@ bun run start -- --verbose
 ```
 
 输出示例：
+
 ```
 [connected] [touchpad] /dev/input/event5: BLTP7853:00 347D:7853 Touchpad
 [input] BLTP7853:00 347D:7853 Touchpad: ABS(MT_POSITION_X) = 1234
